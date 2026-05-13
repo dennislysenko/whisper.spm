@@ -190,6 +190,7 @@ extern "C" {
     // Allocate (almost) all memory needed for the model.
     // Return NULL on failure
     WHISPER_API struct whisper_context * whisper_init_from_file_with_params  (const char * path_model,              struct whisper_context_params params);
+    WHISPER_API struct whisper_context * whisper_init_from_file_with_params_with_coreml  (const char * path_model,  struct whisper_context_params params, bool use_coreml);
     WHISPER_API struct whisper_context * whisper_init_from_buffer_with_params(void * buffer, size_t buffer_size,    struct whisper_context_params params);
     WHISPER_API struct whisper_context * whisper_init_with_params            (struct whisper_model_loader * loader, struct whisper_context_params params);
 
@@ -225,6 +226,7 @@ extern "C" {
     );
 
     WHISPER_API struct whisper_state * whisper_init_state(struct whisper_context * ctx);
+    WHISPER_API struct whisper_state * whisper_init_state_with_coreml(struct whisper_context * ctx, bool use_coreml);
 
     // Given a context, enable use of OpenVINO for encode inference.
     // model_path: Optional path to OpenVINO encoder IR model. If set to nullptr,
@@ -457,6 +459,9 @@ extern "C" {
     // If it returns false, the computation is aborted
     typedef bool (*whisper_encoder_begin_callback)(struct whisper_context * ctx, struct whisper_state * state, void * user_data);
 
+    // Language detected callback
+    typedef void (*whisper_language_detected_callback)(struct whisper_context * ctx, struct whisper_state * state, int lang_id, void * user_data);
+
     // Logits filter callback
     // Can be used to modify the logits before sampling
     // If not NULL, called after applying temperature to logits
@@ -569,6 +574,10 @@ extern "C" {
         size_t                           n_grammar_rules;
         size_t                           i_start_rule;
         float                            grammar_penalty;
+
+        // called when a language is detected
+        whisper_language_detected_callback language_detected_callback;
+        void * language_detected_callback_user_data;
     };
 
     // NOTE: this function allocates memory, and it is the responsibility of the caller to free the pointer - see whisper_free_context_params & whisper_free_params()

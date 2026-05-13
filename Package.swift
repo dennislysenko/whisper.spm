@@ -30,6 +30,7 @@ let package = Package(
             .define("GGML_USE_ACCELERATE"),
             .define("WHISPER_USE_COREML"),
             .define("WHISPER_COREML_ALLOW_FALLBACK"),
+            .unsafeFlags(["-Os"])
         ])
     ],
     cxxLanguageStandard: CXXLanguageStandard.cxx11

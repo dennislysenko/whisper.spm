@@ -844,6 +844,7 @@ struct whisper_state {
     std::string path_model; // populated by whisper_init_from_file_with_params()
 
 #ifdef WHISPER_USE_COREML
+    bool use_coreml = true;
     whisper_coreml_context * ctx_coreml = nullptr;
 #endif
 
@@ -1788,7 +1789,7 @@ static bool whisper_encode_external(const whisper_state & wstate) {
 #ifndef WHISPER_USE_COREML
     const bool use_coreml = false;
 #else
-    const bool use_coreml = wstate.ctx_coreml != nullptr;
+    const bool use_coreml = wstate.ctx_coreml != nullptr && wstate.use_coreml;
 #endif
 
 #ifndef WHISPER_USE_OPENVINO
@@ -3171,6 +3172,10 @@ static std::string whisper_openvino_get_path_cache(std::string path_bin) {
 #endif
 
 struct whisper_state * whisper_init_state(whisper_context * ctx) {
+    return whisper_init_state_with_coreml(ctx, false);
+}
+
+struct whisper_state * whisper_init_state_with_coreml(whisper_context * ctx, bool use_coreml) {
     fill_sin_cos_table();
 
     whisper_state * state = new whisper_state;
@@ -3220,6 +3225,9 @@ struct whisper_state * whisper_init_state(whisper_context * ctx) {
     }
 
 #ifdef WHISPER_USE_COREML
+    state->use_coreml = use_coreml;
+
+    if (use_coreml) {
     const auto path_coreml = whisper_get_coreml_path_encoder(ctx->path_model);
 
     WHISPER_LOG_INFO("%s: loading Core ML model from '%s'\n", __func__, path_coreml.c_str());
@@ -3234,6 +3242,7 @@ struct whisper_state * whisper_init_state(whisper_context * ctx) {
 #endif
     } else {
         WHISPER_LOG_INFO("%s: Core ML model loaded\n", __func__);
+    }
     }
 #endif
 
@@ -3486,12 +3495,16 @@ struct whisper_context * whisper_init_with_params_no_state(struct whisper_model_
 }
 
 struct whisper_context * whisper_init_from_file_with_params(const char * path_model, struct whisper_context_params params) {
+    return whisper_init_from_file_with_params_with_coreml(path_model, params, false);
+}
+
+struct whisper_context * whisper_init_from_file_with_params_with_coreml(const char * path_model, struct whisper_context_params params, bool use_coreml) {
     whisper_context * ctx = whisper_init_from_file_with_params_no_state(path_model, params);
     if (!ctx) {
         return nullptr;
     }
 
-    ctx->state = whisper_init_state(ctx);
+    ctx->state = whisper_init_state_with_coreml(ctx, use_coreml);
     if (!ctx->state) {
         whisper_free(ctx);
         return nullptr;
@@ -4608,6 +4621,9 @@ struct whisper_full_params whisper_full_default_params(enum whisper_sampling_str
         /*.n_grammar_rules =*/ 0,
         /*.i_start_rule    =*/ 0,
         /*.grammar_penalty =*/ 100.0f,
+
+        /*.language_detected_callback           =*/ nullptr,
+        /*.language_detected_callback_user_data =*/ nullptr,
     };
 
     switch (strategy) {
@@ -5253,6 +5269,12 @@ int whisper_full_with_state(
         WHISPER_LOG_INFO("%s: auto-detected language: %s (p = %f)\n", __func__, params.language, probs[whisper_lang_id(params.language)]);
         if (params.detect_language) {
             return 0;
+        }
+
+        if (params.language_detected_callback) {
+            params.language_detected_callback(ctx, ctx->state, lang_id, params.language_detected_callback_user_data);
+            params.language_detected_callback = nullptr;
+            params.language_detected_callback_user_data = nullptr;
         }
     }
 
