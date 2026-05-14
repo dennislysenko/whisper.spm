@@ -1,6 +1,27 @@
 // swift-tools-version:5.9
 import PackageDescription
 
+// Compile defines shared across all whisper.cpp / ggml targets.
+let sharedDefines: [CSetting] = [
+    .define("GGML_USE_ACCELERATE"),
+    .define("ACCELERATE_NEW_LAPACK"),
+    .define("ACCELERATE_LAPACK_ILP64"),
+    .define("GGML_USE_CPU"),
+    .define("GGML_USE_METAL"),
+    .define("WHISPER_USE_COREML"),
+    .define("WHISPER_COREML_ALLOW_FALLBACK"),
+]
+
+let sharedCxxDefines: [CXXSetting] = [
+    .define("GGML_USE_ACCELERATE"),
+    .define("ACCELERATE_NEW_LAPACK"),
+    .define("ACCELERATE_LAPACK_ILP64"),
+    .define("GGML_USE_CPU"),
+    .define("GGML_USE_METAL"),
+    .define("WHISPER_USE_COREML"),
+    .define("WHISPER_COREML_ALLOW_FALLBACK"),
+]
+
 let package = Package(
     name: "whisper.spm",
     platforms: [
@@ -12,26 +33,78 @@ let package = Package(
             targets: ["whisper"]),
     ],
     targets: [
-        .target(name: "whisper",
-        dependencies: [],
-        exclude: [
-            "ggml-opencl.h",
-            "ggml-opencl.cpp",
-            "ggml-cuda.h",
-            "ggml-cuda.cu",
-            "ggml-kompute.h",
-            "ggml-kompute.cpp",
-            "ggml-sycl.h",
-            "ggml-sycl.cpp",
-            "ggml-vulkan.h",
-            "ggml-vulkan.cpp",
-        ],
-        cSettings: [
-            .define("GGML_USE_ACCELERATE"),
-            .define("WHISPER_USE_COREML"),
-            .define("WHISPER_COREML_ALLOW_FALLBACK"),
-            .unsafeFlags(["-Os"])
-        ])
+        // ggml-metal.m uses manual retain/release. It must be compiled with -fno-objc-arc,
+        // which is incompatible with the auto-generated CoreML .m files that #error out
+        // without ARC. Isolate it in its own target.
+        .target(
+            name: "ggml-metal",
+            path: "Sources/whisper/ggml-metal",
+            exclude: ["CMakeLists.txt"],
+            sources: ["ggml-metal.m"],
+            resources: [
+                .process("ggml-metal.metal"),
+            ],
+            publicHeadersPath: ".",
+            cSettings: sharedDefines + [
+                .headerSearchPath("../"),
+                .headerSearchPath("../include"),
+                .unsafeFlags(["-fno-objc-arc", "-Os"]),
+            ],
+            linkerSettings: [
+                .linkedFramework("Foundation"),
+                .linkedFramework("Metal"),
+                .linkedFramework("MetalKit"),
+                .linkedFramework("MetalPerformanceShaders"),
+            ]
+        ),
+        .target(
+            name: "whisper",
+            dependencies: ["ggml-metal"],
+            path: "Sources/whisper",
+            exclude: [
+                "ggml-cpu/CMakeLists.txt",
+                "ggml-cpu/cmake",
+                "ggml-cpu/llamafile",
+                "ggml-cpu/amx",
+                "ggml-cpu/cpu-feats-x86.cpp",
+                "ggml-metal",
+            ],
+            sources: [
+                "whisper.cpp",
+                "ggml.c",
+                "ggml-alloc.c",
+                "ggml-backend.cpp",
+                "ggml-backend-reg.cpp",
+                "ggml-opt.cpp",
+                "ggml-threading.cpp",
+                "ggml-quants.c",
+                "ggml-cpu/ggml-cpu.c",
+                "ggml-cpu/ggml-cpu.cpp",
+                "ggml-cpu/ggml-cpu-aarch64.cpp",
+                "ggml-cpu/ggml-cpu-hbm.cpp",
+                "ggml-cpu/ggml-cpu-quants.c",
+                "ggml-cpu/ggml-cpu-traits.cpp",
+                "coreml/whisper-encoder.mm",
+                "coreml/whisper-encoder-impl.m",
+                "coreml/whisper-decoder-impl.m",
+            ],
+            publicHeadersPath: "include",
+            cSettings: sharedDefines + [
+                .headerSearchPath("."),
+                .headerSearchPath("ggml-cpu"),
+                .unsafeFlags(["-Os"]),
+            ],
+            cxxSettings: sharedCxxDefines + [
+                .headerSearchPath("."),
+                .headerSearchPath("ggml-cpu"),
+                .unsafeFlags(["-Os"]),
+            ],
+            linkerSettings: [
+                .linkedFramework("Accelerate"),
+                .linkedFramework("Foundation"),
+                .linkedFramework("CoreML"),
+            ]
+        ),
     ],
-    cxxLanguageStandard: CXXLanguageStandard.cxx11
+    cxxLanguageStandard: CXXLanguageStandard.cxx17
 )
