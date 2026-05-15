@@ -496,7 +496,10 @@ static struct ggml_backend_metal_context * ggml_metal_init(ggml_backend_dev_t de
     {
         NSBundle * bundle = nil;
 #ifdef SWIFT_PACKAGE
-        bundle = SWIFTPM_MODULE_BUNDLE;
+        // AC-41: this SPM target ships no resource bundle (the .metal source is
+        // embedded via ggml-metal-embed.c). SWIFTPM_MODULE_BUNDLE is therefore
+        // undefined here. Bundle-based lookups below short-circuit on nil.
+        bundle = nil;
 #else
         bundle = [NSBundle bundleForClass:[GGMLMetalClass class]];
 #endif
@@ -553,10 +556,14 @@ static struct ggml_backend_metal_context * ggml_metal_init(ggml_backend_dev_t de
 #if GGML_METAL_EMBED_LIBRARY
             GGML_LOG_INFO("%s: using embedded metal library\n", __func__);
 
-            extern const char ggml_metallib_start[];
-            extern const char ggml_metallib_end[];
+            // AC-41 patch: ggml-metal-embed.c provides ggml_metallib_start as a
+            // byte array plus a ggml_metallib_size constant, instead of the
+            // upstream `ld -r -b binary` ggml_metallib_start/_end label pair
+            // (which we can't reproduce from pure C in a SwiftPM target).
+            extern const unsigned char ggml_metallib_start[];
+            extern const size_t ggml_metallib_size;
 
-            NSString * src = [[NSString alloc] initWithBytes:ggml_metallib_start length:(ggml_metallib_end-ggml_metallib_start) encoding:NSUTF8StringEncoding];
+            NSString * src = [[NSString alloc] initWithBytes:ggml_metallib_start length:ggml_metallib_size encoding:NSUTF8StringEncoding];
 #else
             GGML_LOG_INFO("%s: default.metallib not found, loading from source\n", __func__);
 

@@ -39,15 +39,17 @@ let package = Package(
         .target(
             name: "ggml-metal",
             path: "Sources/whisper/ggml-metal",
-            exclude: ["CMakeLists.txt"],
-            sources: ["ggml-metal.m"],
-            resources: [
-                .process("ggml-metal.metal"),
-            ],
+            // AC-41: ggml-metal.metal is NOT shipped as a runtime resource. SwiftPM
+            // resource bundles for sub-targets aren't reachable from iOS apps that
+            // consume the parent product, so we embed the shader source as a byte
+            // array via ggml-metal-embed.c (mirrors upstream GGML_METAL_EMBED_LIBRARY).
+            exclude: ["CMakeLists.txt", "ggml-metal.metal"],
+            sources: ["ggml-metal.m", "ggml-metal-embed.c"],
             publicHeadersPath: ".",
             cSettings: sharedDefines + [
                 .headerSearchPath("../"),
                 .headerSearchPath("../include"),
+                .define("GGML_METAL_EMBED_LIBRARY", to: "1"),
                 .unsafeFlags(["-fno-objc-arc", "-Os"]),
             ],
             linkerSettings: [
